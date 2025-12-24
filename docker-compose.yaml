@@ -1,0 +1,208 @@
+# ========================================
+# docker-compose.yml
+# ========================================
+volumes:
+  sql-data:
+    driver: local
+    driver_opts:
+      device: ${PWD}/volumes/sql
+      o: bind
+      type: none
+
+  www-data:
+    driver: local
+    driver_opts:
+      device: ${PWD}/volumes/html
+      o: bind
+      type: none
+
+services:
+  php-apache:
+    build:
+      context: .
+      dockerfile_inline: |
+        FROM serversideup/php:${PHP_VERSION}-fpm-apache
+        USER root
+        RUN install-php-extensions intl gd imap
+        USER www-data
+    container_name: ${COMPOSE_PROJECT_NAME}-php-apache
+    depends_on:
+      sql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    environment:
+      - TZ=${TIMEZONE}
+      - APACHE_DOCUMENT_ROOT=${APACHE_DOCUMENT_ROOT}
+      # === FPM Settings ===
+      # === Pool user/group ===
+      - PHP_FPM_USER="www-data"
+      - PHP_FPM_GROUP="www-data"
+      # === Listen-Socket (Standard: 9000)
+      - PHP_FPM_LISTEN="9000"
+      # === Process Manager ===
+      - PHP_FPM_PM="dynamic"
+      - PHP_FPM_PM_MAX_CHILDREN=450
+      - PHP_FPM_PM_START_SERVERS=30
+      - PHP_FPM_PM_MIN_SPARE_SERVERS=30
+      - PHP_FPM_PM_MAX_SPARE_SERVERS=60
+      - PHP_FPM_PM_MAX_REQUESTS=200
+      - PHP_FPM_REQUEST_TERMINATE_TIMEOUT=300
+      # === Slow Log ===
+      - PHP_FPM_REQUEST_SLOWLOG_TIMEOUT="30s"
+      - PHP_FPM_SLOWLOG="/proc/self/fd/2"
+      # === Basis Settings ===
+      - PHP_MEMORY_LIMIT=${PHP_MEMORY_LIMIT}
+      - PHP_MAX_EXECUTION_TIME=${PHP_INPUT_TIME_MAX_EXECUTION}
+      - PHP_MAX_INPUT_TIME=${PHP_INPUT_TIME_MAX_EXECUTION}
+      - PHP_MAX_INPUT_VARS=20000
+      # === Sicherheit ===
+      - PHP_EXPOSE_PHP="off"
+      # === File Uploads ===
+      - PHP_UPLOAD_MAX_FILESIZE=${PHP_POST_MAX_SIZE_UPLOAD_MAX_FILESIZE}
+      - PHP_POST_MAX_SIZE=${PHP_POST_MAX_SIZE_UPLOAD_MAX_FILESIZE}
+      - PHP_MAX_FILE_UPLOADS=20
+      # === Error Handling ===
+      - PHP_DISPLAY_ERRORS="off"
+      - PHP_DISPLAY_STARTUP_ERRORS="off"
+      - PHP_ERROR_REPORTING="E_ALL"
+      - PHP_LOG_ERRORS="on"
+      # === Date/Time ===
+      - PHP_DATE_TIMEZONE=${TIMEZONE}
+      # === HTTPS/Proxy Support ===
+      - PHP_AUTO_GLOBALS_JIT="off"
+      # === Session Security ===
+      - PHP_SESSION_COOKIE_SECURE="off"
+      - PHP_SESSION_COOKIE_HTTPONLY="on"
+      - PHP_SESSION_COOKIE_SAMESITE="Lax"
+      - PHP_SESSION_USE_STRICT_MODE="on"
+      # === REALPATH Cache ===
+      - PHP_REALPATH_CACHE_SIZE="4096K"
+      - PHP_REALPATH_CACHE_TTL=7200
+      # === OPCache ===
+      - PHP_OPCACHE_ENABLE=1
+      - PHP_OPCACHE_ENABLE_CLI=1
+      - PHP_OPCACHE_MEMORY_CONSUMPTION=256
+      - PHP_OPCACHE_INTERNED_STRINGS_BUFFER=32
+      - PHP_OPCACHE_MAX_ACCELERATED_FILES=50000
+      - PHP_OPCACHE_REVALIDATE_FREQ=0
+      - PHP_OPCACHE_VALIDATE_TIMESTAMPS=0
+      - PHP_OPCACHE_FAST_SHUTDOWN=1
+      - PHP_OPCACHE_FILE_CACHE_ONLY=0
+      - PHP_OPCACHE_FILE_CACHE_CONSISTENCY_CHECKS=0
+      - PHP_OPCACHE_ENABLE_FILE_OVERRIDE=1
+      # === OPcache JIT ===
+      - PHP_OPCACHE_JIT=1255
+      - PHP_OPCACHE_JIT_BUFFER_SIZE="128M"
+      # === ZEND ===
+      - PHP_ZEND_ASSERTIONS="-1"
+      - PHP_ZEND_DETECT_UNICODE=0
+      - PHP_DETECT_UNICODE:="off"
+    labels:
+      # Traefik Labels
+      - traefik.enable=true
+      - traefik.http.routers.${COMPOSE_PROJECT_NAME}.rule=${HOSTRULE}
+      - traefik.http.routers.${COMPOSE_PROJECT_NAME}.entrypoints=websecure-https
+      - traefik.http.routers.${COMPOSE_PROJECT_NAME}.tls.certresolver=letsEncrypt
+      - traefik.http.services.${COMPOSE_PROJECT_NAME}.loadbalancer.passHostHeader=true
+      - traefik.http.services.${COMPOSE_PROJECT_NAME}.loadbalancer.server.port=8080
+      # Ofelia Labels
+      - ofelia.enabled=true
+      # 1. Core Archive (alle 2 Minuten)
+      - ofelia.job-exec.${COMPOSE_PROJECT_NAME}-core-archive.schedule=*/2 * * * *
+      - ofelia.job-exec.${COMPOSE_PROJECT_NAME}-core-archive.command=php /app/console core:archive
+    networks:
+      - default
+      - ${PROXY_NETWORK}
+    restart: ${RESTART}
+    volumes:
+      - www-data:/app
+
+  # ========================================
+  # Redis (Offiziell - Memory Only)
+  # ========================================
+  redis:
+    image: redis:7-alpine
+    container_name: ${COMPOSE_PROJECT_NAME}-redis
+    command: ["redis-server", "--appendonly", "no", "--save", "", "--maxmemory", "500mb", "--maxmemory-policy", "allkeys-lru", "--requirepass", "${REDIS_PASSWORD}"]
+    environment:
+      - TZ=${TIMEZONE}
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: "512M"
+    networks:
+      default:
+        aliases:
+          - redis
+    restart: ${RESTART}
+
+  # ========================================
+  # MariaDB (Offiziell)
+  # ========================================
+  sql:
+    image: mariadb:11.4
+    container_name: ${COMPOSE_PROJECT_NAME}-sql
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: "8G"
+    environment:
+      - MYSQL_ROOT_PASSWORD=${SQL_ROOT_PASSWORD}
+      - MYSQL_DATABASE=${SQL_DATABASE}
+      - MYSQL_USER=${SQL_USER}
+      - MYSQL_PASSWORD=${SQL_PASSWORD}
+      - MARIADB_AUTO_UPGRADE=1
+      - MYSQL_CHARSET=utf8mb4
+      - TZ=${TIMEZONE}
+    healthcheck:
+      interval: 10s
+      retries: 20
+      start_period: 30s
+      test: ["CMD-SHELL", "mariadb-admin ping -uroot -p\"${SQL_ROOT_PASSWORD}\" || exit 1"]
+      timeout: 5s
+    networks:
+      default:
+        aliases:
+          - mysql
+          - database
+    restart: ${RESTART}
+    volumes:
+      - sql-data:/var/lib/mysql
+      - ./configs/sql/custom.cnf:/etc/mysql/mariadb.conf.d/99-custom.cnf:ro
+
+  # ========================================
+  # Datenbank Backup
+  # ========================================
+  sqlbackup:
+    image: fradelg/mysql-cron-backup:latest
+    container_name: ${COMPOSE_PROJECT_NAME}-sqlbackup
+    depends_on:
+      sql:
+        condition: service_started
+    environment:
+      TZ: ${TIMEZONE}
+      MYSQL_HOST: sql
+      MYSQL_USER: root
+      MYSQL_PASS: ${SQL_ROOT_PASSWORD}
+      MAX_BACKUPS: 12
+      INIT_BACKUP: 1
+      CRON_TIME: "3 */6 * * *"
+      GZIP_LEVEL: 9
+    networks:
+      - default
+    restart: ${RESTART}
+    volumes:
+      - ${BACKUPVOLUME}/${COMPOSE_PROJECT_NAME}:/backup
+
+# ========================================
+# Networks
+# ========================================
+networks:
+  default:
+    driver: bridge
+  traefik_proxy_network:
+    external: true
+    name: ${PROXY_NETWORK}
