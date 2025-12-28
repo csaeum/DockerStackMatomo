@@ -1,49 +1,60 @@
 # ========================================
-# ENDGÜLTIGE LÖSUNG - MariaDB Configuration (Minimal & Essential)
+# MariaDB Configuration für Matomo
 # configs/sql/custom.cnf
+# Optimiert für: 10 Sites, ~500 User/Tag, 4GB RAM Limit
 # ========================================
-[mysqld]
 
+[mysqld]
 # ========================================
 # Basic Settings
 # ========================================
 bind-address = 0.0.0.0
-max_allowed_packet = 96MB
+max_allowed_packet = 96M
 
 # ========================================
-# Character Set (Shopware erforderlich)
+# Character Set (Matomo erforderlich)
 # ========================================
 character_set_server = utf8mb4
 collation_server = utf8mb4_unicode_ci
 
 # ========================================
-# Performance (Shopware optimiert)
+# InnoDB Performance
 # ========================================
-# InnoDB Buffer Pool (wichtigster Parameter)
-innodb_buffer_pool_size = 1G
-# InnoDB Log Settings (aus ursprünglicher Config)
+# Buffer Pool: 60-80% des verfügbaren RAM (3GB bei 4GB Limit)
+innodb_buffer_pool_size = 3G
+
+# Transaction Logging (erhöht Tracker-Durchsatz erheblich)
 innodb_flush_log_at_trx_commit = 2
 innodb_log_file_size = 256M
-# IO-Kapazität (aus ursprünglicher Config)
+innodb_log_buffer_size = 16M
+
+# IO-Optimierung
 innodb_io_capacity = 200
-# Connections (aus ursprünglicher Config)
-max_connections = 600
-# Query Cache (für häufige Shopware-Abfragen)
-query_cache_type = 1
-query_cache_size = 64M
+innodb_write_io_threads = 4
+innodb_read_io_threads = 4
+innodb_file_per_table = 1
+
+# ========================================
+# Connection & Query Settings
+# ========================================
+max_connections = 200
+table_open_cache = 2000
+
+# Temporäre Tabellen (für Report-Generierung)
+tmp_table_size = 128M
+max_heap_table_size = 128M
 
 # ========================================
 # Optimizer
 # ========================================
 optimizer_search_depth = 0
 optimizer_prune_level = 1
-optimizer_switch = 'index_merge_intersection=off'
 
 # ========================================
 # Docker Optimierungen
 # ========================================
+# DNS-Lookups vermeiden
 skip_name_resolve
-innodb_file_per_table = 1
 
 # ========================================
 # Security

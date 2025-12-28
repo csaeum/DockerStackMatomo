@@ -1,0 +1,82 @@
+name: Create Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get version from tag
+        id: get_version
+        run: |
+          echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+          echo "TAG=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Extract changelog for this version
+        id: changelog
+        run: |
+          VERSION=${{ steps.get_version.outputs.VERSION }}
+
+          if [ -f CHANGELOG.md ]; then
+            # Extract changelog entry for this version
+            sed -n "/## \[$VERSION\]/,/## \[/p" CHANGELOG.md | sed '$d' > current_changelog.md
+
+            # If no specific entry found, use generic message
+            if [ ! -s current_changelog.md ]; then
+              echo "Release $VERSION" > current_changelog.md
+              echo "" >> current_changelog.md
+              echo "See [CHANGELOG.md](CHANGELOG.md) for details." >> current_changelog.md
+            fi
+          else
+            echo "Release $VERSION" > current_changelog.md
+          fi
+
+          cat current_changelog.md
+
+      - name: Create release archive
+        run: |
+          # Create archive using git archive (respects .gitattributes)
+          git archive --format=zip --prefix=DockerStackMatomo/ HEAD > DockerStackMatomo.zip
+
+          # Verify archive
+          unzip -l DockerStackMatomo.zip
+
+          echo "✅ Release archive created"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: Release ${{ steps.get_version.outputs.TAG }}
+          body_path: current_changelog.md
+          files: DockerStackMatomo.zip
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload additional artifacts
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            docker-compose.yaml
+            .env.example
+            README.md
+            README.en.md
+            README.fr.md
+            CHANGELOG.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

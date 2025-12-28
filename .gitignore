@@ -1,0 +1,31 @@
+# ========================================
+# .gitignore - Matomo Docker Stack
+# ========================================
+
+# Environment-Dateien mit sensiblen Daten
+.env
+
+# Docker Volumes (lokale Daten)
+volumes/
+
+# Backup-Dateien
+*.bak
+*.backup
+
+# IDE-Dateien
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# PHPStorm-spezifisch
+.idea/workspace.xml
+.idea/tasks.xml
+.idea/usage.statistics.xml
+.idea/dictionaries
+.idea/shelf
+
+# OS-Dateien
+.DS_Store
+Thumbs.db
